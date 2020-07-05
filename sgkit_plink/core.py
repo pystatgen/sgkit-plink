@@ -1,10 +1,13 @@
-import numpy as np
-import dask.dataframe as dd
-import dask.array as da
-from pysnptools.snpreader import Bed
 from pathlib import Path
 from typing import Union
+
+import dask.array as da
+import dask.dataframe as dd
+import numpy as np
+from pysnptools.snpreader import Bed
+
 from sgkit import create_genotype_call_dataset
+from sgkit.api import DIM_SAMPLE
 
 # from .api import (  # noqa: F401
 #     DIM_ALLELE,
@@ -18,7 +21,6 @@ PathType = Union[str, Path]
 
 
 class BedReader(object):
-
     def __init__(self, path, shape, dtype=np.int8, count_A1=True):
         # n variants (sid = SNP id), n samples (iid = Individual id)
         n_sid, n_iid = shape
@@ -110,29 +112,26 @@ def read_plink(
         name=f"read_plink:{path}",
     )
 
-    # TODO: either avoid computing Dask arrays, or just use Pandas
-    df_bim_pd = df_bim.compute()
-    df_fam_pd = df_fam.compute()
+    arr_bim = {
+        df_bim[c].to_dask_array(lengths=True)
+        for c in ["contig", "pos", "a1", "a2", "variant_id"]
+    }
+    variant_contig_names = arr_bim["contig"]
+    variant_contig_index = da.unique(variant_contig_names, return_inverse=True)[1]
+    variant_pos = arr_bim["pos"].astype("int32")
 
-    variant_contig_names = df_bim_pd["contig"].values
-    # TODO: can we get the names from somewhere in a given order? (since following sorts them)
-    u, variant_contig = np.unique(variant_contig_names, return_inverse=True)
+    a1 = arr_bim["a1"].astype("str")
+    a2 = arr_bim["a2"].astype("str")
+    # Note: column_stack not implemented in Dask, must use [v|h]stack
+    variant_alleles = da.hstack((a1[:, np.newaxis], a2[:, np.newaxis]))
 
-    variant_pos = df_bim_pd["pos"].values
+    variant_id = df_bim["variant_id"].astype(str).to_dask_array(lengths=True)
 
-    a1 = df_bim_pd["a1"].values
-    a2 = df_bim_pd["a2"].values
-    variant_alleles = np.column_stack((a1, a2))
-    variant_alleles = variant_alleles.astype(np.dtype("S1"))
-
-    variant_id = df_bim_pd["variant_id"].values
-    variant_id = variant_id.astype(str)
-
-    sample_id = df_fam_pd["sample_id"].values
+    sample_id = df_fam["sample_id"].astype(str).to_dask_array(lengths=True)
     sample_id = sample_id.astype(str)
 
     ds = create_genotype_call_dataset(
-        variant_contig,
+        variant_contig_index,
         variant_pos,
         variant_alleles,
         sample_id,
