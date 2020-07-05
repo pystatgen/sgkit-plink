@@ -1,3 +1,4 @@
+"""PLINK 1.9 reader implementation"""
 from pathlib import Path
 from typing import Union
 
@@ -9,15 +10,29 @@ from pysnptools.snpreader import Bed
 from sgkit import create_genotype_call_dataset
 from sgkit.api import DIM_SAMPLE
 
-# from .api import (  # noqa: F401
-#     DIM_ALLELE,
-#     DIM_PLOIDY,
-#     DIM_SAMPLE,
-#     DIM_VARIANT,
-#     create_genotype_call_dataset,
-# )
-
 PathType = Union[str, Path]
+
+FAM_FIELDS = [
+    ("family_id", str, "U"),
+    ("member_id", str, "U"),
+    ("paternal_id", str, "U"),
+    ("maternal_id", str, "U"),
+    ("sex", str, "int8"),
+    ("phenotype", str, "int8"),
+]
+FAM_DF_DTYPE = dict([(f[0], f[1]) for f in FAM_FIELDS])
+FAM_ARRAY_DTYPE = dict([(f[0], f[2]) for f in FAM_FIELDS])
+
+BIM_FIELDS = [
+    ("contig", str, "U"),
+    ("variant_id", str, "U"),
+    ("cm_pos", "float32", "float32"),
+    ("pos", "int32", "int32"),
+    ("a1", str, "U"),
+    ("a2", str, "U"),
+]
+BIM_DF_DTYPE = dict([(f[0], f[1]) for f in BIM_FIELDS])
+BIM_ARRAY_DTYPE = dict([(f[0], f[2]) for f in BIM_FIELDS])
 
 
 class BedReader(object):
@@ -40,10 +55,6 @@ class BedReader(object):
         self.dtype = dtype
         self.ndim = 3
 
-    @staticmethod
-    def _is_empty_slice(s):
-        return s.start == s.stop
-
     def __getitem__(self, idx):
         if not isinstance(idx, tuple):
             raise IndexError(f"Indexer must be tuple (received {type(idx)})")
@@ -51,20 +62,16 @@ class BedReader(object):
             raise IndexError(
                 f"Indexer must be two-item tuple (received {len(idx)} slices)"
             )
-
-        # This is called by dask with empty slices before trying to read any chunks, so it may need
-        # to be handled separately if pysnptools is slow here
-        # if all(map(BedReader._is_empty_slice, idx)):
-        #     return np.empty((0, 0), dtype=self.dtype)
-
-        arr = self.bed[idx[::-1]].read(dtype=np.float32, view_ok=False).val.T
-        arr = np.ma.masked_invalid(arr)
+        # Slice using reversal of first two slices --
+        # pysnptools uses sample x variant orientation
+        arr = self.bed[idx[1::-1]].read(dtype=np.float32, view_ok=False).val.T
+        # Convert missing calls as nan to -1
+        arr = np.nan_to_num(arr, nan=-1.0)
         arr = arr.astype(self.dtype)
         # Add a ploidy dimension, so allele counts of 0, 1, 2 correspond to 00, 01, 11
-        arr2 = np.empty((arr.shape[0], arr.shape[1], 2), dtype=self.dtype)
-        arr2[:, :, 0] = np.where(arr == 2, 1, 0)
-        arr2[:, :, 1] = np.where(arr == 0, 0, 1)
-        return arr2
+        arr = np.stack([np.where(arr == 2, 1, 0), np.where(arr == 0, 0, 1)], axis=-1)
+        # Apply final slice to 3D result
+        return arr[:, :, idx[-1]]
 
     def close(self):
         # This is not actually crucial since a Bed instance with no
@@ -74,18 +81,38 @@ class BedReader(object):
         self.bed._close_bed()
 
 
+def _to_dict(df, dtype=None):
+    return {
+        c: df[c].to_dask_array(lengths=True).astype(dtype[c] if dtype else df[c].dtype)
+        for c in df
+    }
+
+
 def read_fam(path: PathType, sep: str = "\t"):
-    names = ["sample_id", "fam_id", "pat_id", "mat_id", "is_female", "phenotype"]
-    return dd.read_csv(
-        str(path) + ".fam", sep=sep, names=names, storage_options=dict(auto_mkdir=False)
-    )
+    # See: https://www.cog-genomics.org/plink/1.9/formats#fam
+    names = [f[0] for f in FAM_FIELDS]
+    df = dd.read_csv(str(path) + ".fam", sep=sep, names=names, dtype=FAM_DF_DTYPE)
+
+    def coerce_code(v, codes):
+        # Set non-ints and unexpected codes to missing (-1)
+        v = dd.to_numeric(v, errors="coerce")
+        v = v.where(v.isin(codes), np.nan)
+        return v.fillna(-1).astype("int8")
+
+    df["paternal_id"] = df["paternal_id"].where(df["paternal_id"] != "0", None)
+    df["maternal_id"] = df["maternal_id"].where(df["maternal_id"] != "0", None)
+    df["sex"] = coerce_code(df["sex"], [1, 2])
+    df["phenotype"] = coerce_code(df["phenotype"], [1, 2])
+
+    return df
 
 
 def read_bim(path: PathType, sep: str = " "):
-    names = ["contig", "variant_id", "cm_pos", "pos", "a1", "a2"]
-    return dd.read_csv(
-        str(path) + ".bim", sep=sep, names=names, storage_options=dict(auto_mkdir=False)
-    )
+    # See: https://www.cog-genomics.org/plink/1.9/formats#bim
+    names = [f[0] for f in BIM_FIELDS]
+    df = dd.read_csv(str(path) + ".bim", sep=sep, names=names, dtype=BIM_DF_DTYPE)
+    df["contig"] = df["contig"].where(df["contig"] != "0", None)
+    return df
 
 
 def read_plink(
@@ -93,15 +120,18 @@ def read_plink(
     chunks: Union[str, int, tuple] = "auto",
     fam_sep: str = "\t",
     bim_sep: str = " ",
+    bim_int_contig: bool = False,
     count_A1: bool = True,
     lock: bool = False,
 ):
     # Load axis data first to determine dimension sizes
     df_fam = read_fam(path, sep=fam_sep)
+    arr_fam = _to_dict(df_fam, dtype=FAM_ARRAY_DTYPE)
     df_bim = read_bim(path, sep=bim_sep)
+    arr_bim = _to_dict(df_bim, dtype=BIM_ARRAY_DTYPE)
 
     # Load genotyping data
-    call_gt = da.from_array(
+    call_genotype = da.from_array(
         # Make sure to use asarray=False in order for masked arrays to propagate
         BedReader(path, (len(df_bim), len(df_fam)), count_A1=count_A1),
         chunks=chunks,
@@ -112,30 +142,43 @@ def read_plink(
         name=f"read_plink:{path}",
     )
 
-    arr_bim = {
-        df_bim[c].to_dask_array(lengths=True)
-        for c in ["contig", "pos", "a1", "a2", "variant_id"]
-    }
-    variant_contig_names = arr_bim["contig"]
-    variant_contig_index = da.unique(variant_contig_names, return_inverse=True)[1]
-    variant_pos = arr_bim["pos"].astype("int32")
+    # If contigs are already integers, use them as-is
+    if bim_int_contig:
+        variant_contig = arr_bim["contig"].astype("int16")
+        variant_contig_names = da.unique(variant_contig).astype(str)
+        variant_contig_names = list(variant_contig_names.compute())
+    # Otherwise index by unique name where index will correspond
+    # to lexsort on names, i.e. if contigs are 'chr1', 'chr2',
+    # ..., 'chr10' then 'chr10' comes before 'chr2'
+    else:
+        variant_contig_names, variant_contig = da.unique(
+            arr_bim["contig"], return_inverse=True
+        )
+        variant_contig_names = list(variant_contig_names.compute())
+        variant_contig = variant_contig.astype("int16")
 
+    variant_position = arr_bim["pos"]
     a1 = arr_bim["a1"].astype("str")
     a2 = arr_bim["a2"].astype("str")
+
     # Note: column_stack not implemented in Dask, must use [v|h]stack
     variant_alleles = da.hstack((a1[:, np.newaxis], a2[:, np.newaxis]))
+    # TODO: Why use bytes for this instead of string?
+    variant_alleles = variant_alleles.astype("S")
+    variant_id = arr_bim["variant_id"]
 
-    variant_id = df_bim["variant_id"].astype(str).to_dask_array(lengths=True)
-
-    sample_id = df_fam["sample_id"].astype(str).to_dask_array(lengths=True)
-    sample_id = sample_id.astype(str)
+    sample_id = arr_fam["member_id"]
 
     ds = create_genotype_call_dataset(
-        variant_contig_index,
-        variant_pos,
-        variant_alleles,
-        sample_id,
-        call_gt=call_gt,
+        variant_contig_names=variant_contig_names,
+        variant_contig=variant_contig,
+        variant_position=variant_position,
+        variant_alleles=variant_alleles,
+        sample_id=sample_id,
+        call_genotype=call_genotype,
         variant_id=variant_id,
     )
-    ds = ds.assign(family_id=([DIM_SAMPLE], sample_id))
+
+    # Assign PLINK-specific pedigree fields
+    ds = ds.assign(**{f"sample/{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam})
+    return ds
