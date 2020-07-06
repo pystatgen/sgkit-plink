@@ -1,0 +1,3 @@
+numpy
+xarray
+pysnptools>=0.4.19
