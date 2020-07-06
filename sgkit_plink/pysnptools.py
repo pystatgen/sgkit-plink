@@ -182,8 +182,19 @@ def read_plink(
     Returns
     -------
     Dataset
-        A dataset containing genotypes as 3D calls along with
-        all accompanying pedigree and variant information.
+        A dataset containing genotypes as 3 dimensional calls along with
+        all accompanying pedigree and variant information. The content
+        of this dataset matches that of sgkit.create_genotype_call_dataset
+        with all pedigree-specific fields defined as:
+            - sample/family_id: Family identifier commonly referred to as FID
+            - sample/id: Within-family identifier for sample
+            - sample/paternal_id: Within-family identifier for father of sample
+            - sample/maternal_id: Within-family identifier for mother of sample
+            - sample/sex: Sex code equal to 1 for male, 2 for female, and -1
+                for missing
+            - sample/phenotype: Phenotype code equal to 1 for control, 2 for case,
+                and -1 for missing
+        See https://www.cog-genomics.org/plink/1.9/formats#fam for more details.
     """
 
     # Load axis data first to determine dimension sizes
@@ -247,5 +258,7 @@ def read_plink(
     )
 
     # Assign PLINK-specific pedigree fields
-    ds = ds.assign(**{f"sample/{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam})
+    ds = ds.assign(
+        **{f"sample/{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
+    )
     return ds
