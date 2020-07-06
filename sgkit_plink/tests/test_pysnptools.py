@@ -34,6 +34,42 @@ def test_read_str_contig(ds1):
     assert ds1.attrs["contigs"] == ["1"]
 
 
+def test_read_call_values(ds1):
+    # Validate a few randomly selected individual calls
+    # (spanning all possible states for a call)
+    idx = np.array(
+        [
+            [50, 7],
+            [81, 8],
+            [45, 2],
+            [36, 8],
+            [24, 2],
+            [92, 9],
+            [26, 2],
+            [81, 0],
+            [31, 8],
+            [4, 9],
+        ]
+    )
+    expected = np.array(
+        [
+            [1, 0],
+            [1, 0],
+            [1, 1],
+            [1, 1],
+            [-1, -1],
+            [0, 0],
+            [0, 0],
+            [1, 1],
+            [0, 0],
+            [0, 0],
+        ]
+    )
+    gt = ds1["call/genotype"].values
+    actual = gt[tuple(idx.T)]
+    np.testing.assert_equal(actual, expected)
+
+
 def test_read_stat_call_rate(ds1):
     # Validate call rate for each sample
     sample_call_rates = (

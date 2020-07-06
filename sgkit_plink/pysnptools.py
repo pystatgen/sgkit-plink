@@ -72,7 +72,7 @@ class BedReader(object):
         # Convert missing calls as nan to -1
         arr = np.nan_to_num(arr, nan=-1.0)
         arr = arr.astype(self.dtype)
-        # Add a ploidy dimension, so allele counts of 0, 1, 2 correspond to 00, 01, 11
+        # Add a ploidy dimension, so allele counts of 0, 1, 2 correspond to 00, 10, 11
         arr = np.stack(
             [
                 np.where(arr < 0, -1, np.where(arr == 0, 0, 1)),
@@ -99,7 +99,7 @@ def _to_dict(df, dtype=None):
     }
 
 
-def read_fam(path: PathType, sep: str = "\t") -> DataFrame:
+def read_fam(path: PathType, sep: str = " ") -> DataFrame:
     # See: https://www.cog-genomics.org/plink/1.9/formats#fam
     names = [f[0] for f in FAM_FIELDS]
     df = dd.read_csv(str(path) + ".fam", sep=sep, names=names, dtype=FAM_DF_DTYPE)
@@ -118,7 +118,7 @@ def read_fam(path: PathType, sep: str = "\t") -> DataFrame:
     return df
 
 
-def read_bim(path: PathType, sep: str = " ") -> DataFrame:
+def read_bim(path: PathType, sep: str = "\t") -> DataFrame:
     # See: https://www.cog-genomics.org/plink/1.9/formats#bim
     names = [f[0] for f in BIM_FIELDS]
     df = dd.read_csv(str(path) + ".bim", sep=sep, names=names, dtype=BIM_DF_DTYPE)
@@ -129,8 +129,8 @@ def read_bim(path: PathType, sep: str = " ") -> DataFrame:
 def read_plink(
     path: PathType,
     chunks: Union[str, int, tuple] = "auto",
-    fam_sep: str = "\t",
-    bim_sep: str = " ",
+    fam_sep: str = " ",
+    bim_sep: str = "\t",
     bim_int_contig: bool = False,
     count_a1: bool = True,
     lock: bool = False,
@@ -151,9 +151,9 @@ def read_plink(
     chunks : Union[str, int, tuple], optional
         Chunk size for genotype (i.e. `.bed`) data, by default "auto"
     fam_sep : str, optional
-        Delimiter for `.fam` file, by default "\t"
+        Delimiter for `.fam` file, by default " "
     bim_sep : str, optional
-        Delimiter for `.bim` file, by default " "
+        Delimiter for `.bim` file, by default "\t"
     bim_int_contig : bool, optional
         Whether or not the contig/chromosome name in the `.bim`
         file should be interpreted as an integer, by default False.
@@ -190,7 +190,6 @@ def read_plink(
     df_fam = read_fam(path, sep=fam_sep)
     df_bim = read_bim(path, sep=bim_sep)
 
-    # TODO: not on nearly 10x faster on real datasets
     if persist:
         df_fam = df_fam.persist()
         df_bim = df_bim.persist()
