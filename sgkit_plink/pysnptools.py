@@ -57,9 +57,11 @@ class BedReader(object):
 
     def __getitem__(self, idx):
         if not isinstance(idx, tuple):
-            raise IndexError(f"Indexer must be tuple (received {type(idx)})")
+            raise IndexError(  # pragma: no cover
+                f"Indexer must be tuple (received {type(idx)})"
+            )
         if len(idx) != self.ndim:
-            raise IndexError(
+            raise IndexError(  # pragma: no cover
                 f"Indexer must be two-item tuple (received {len(idx)} slices)"
             )
         # Slice using reversal of first two slices --
@@ -69,7 +71,14 @@ class BedReader(object):
         arr = np.nan_to_num(arr, nan=-1.0)
         arr = arr.astype(self.dtype)
         # Add a ploidy dimension, so allele counts of 0, 1, 2 correspond to 00, 01, 11
-        arr = np.stack([np.where(arr == 2, 1, 0), np.where(arr == 0, 0, 1)], axis=-1)
+        arr = np.stack(
+            [
+                np.where(arr < 0, -1, np.where(arr == 0, 0, 1)),
+                np.where(arr < 0, -1, np.where(arr == 2, 1, 0)),
+            ],
+            axis=-1,
+        )
+
         # Apply final slice to 3D result
         return arr[:, :, idx[-1]]
 
@@ -78,7 +87,7 @@ class BedReader(object):
         # in-memory bim/map/fam data is essentially just a file pointer
         # but this will still be problematic if the an array is created
         # from the same PLINK dataset many times
-        self.bed._close_bed()
+        self.bed._close_bed()  # pragma: no cover
 
 
 def _to_dict(df, dtype=None):
@@ -121,25 +130,32 @@ def read_plink(
     fam_sep: str = "\t",
     bim_sep: str = " ",
     bim_int_contig: bool = False,
-    count_A1: bool = True,
+    count_a1: bool = True,
     lock: bool = False,
+    persist: bool = True,
 ):
     # Load axis data first to determine dimension sizes
     df_fam = read_fam(path, sep=fam_sep)
-    arr_fam = _to_dict(df_fam, dtype=FAM_ARRAY_DTYPE)
     df_bim = read_bim(path, sep=bim_sep)
+
+    # TODO: not on nearly 10x faster on real datasets
+    if persist:
+        df_fam = df_fam.persist()
+        df_bim = df_bim.persist()
+
+    arr_fam = _to_dict(df_fam, dtype=FAM_ARRAY_DTYPE)
     arr_bim = _to_dict(df_bim, dtype=BIM_ARRAY_DTYPE)
 
     # Load genotyping data
     call_genotype = da.from_array(
         # Make sure to use asarray=False in order for masked arrays to propagate
-        BedReader(path, (len(df_bim), len(df_fam)), count_A1=count_A1),
+        BedReader(path, (len(df_bim), len(df_fam)), count_A1=count_a1),
         chunks=chunks,
         # Lock must be true with multiprocessing dask scheduler
         # to not get pysnptools errors (it works w/ threading backend though)
         lock=lock,
         asarray=False,
-        name=f"read_plink:{path}",
+        name=f"pysnptools:read_plink:{path}",
     )
 
     # If contigs are already integers, use them as-is
