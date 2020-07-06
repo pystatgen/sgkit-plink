@@ -5,7 +5,9 @@ from typing import Union
 import dask.array as da
 import dask.dataframe as dd
 import numpy as np
+from dask.dataframe import DataFrame
 from pysnptools.snpreader import Bed
+from xarray import Dataset
 
 from sgkit import create_genotype_call_dataset
 from sgkit.api import DIM_SAMPLE
@@ -97,7 +99,7 @@ def _to_dict(df, dtype=None):
     }
 
 
-def read_fam(path: PathType, sep: str = "\t"):
+def read_fam(path: PathType, sep: str = "\t") -> DataFrame:
     # See: https://www.cog-genomics.org/plink/1.9/formats#fam
     names = [f[0] for f in FAM_FIELDS]
     df = dd.read_csv(str(path) + ".fam", sep=sep, names=names, dtype=FAM_DF_DTYPE)
@@ -116,7 +118,7 @@ def read_fam(path: PathType, sep: str = "\t"):
     return df
 
 
-def read_bim(path: PathType, sep: str = " "):
+def read_bim(path: PathType, sep: str = " ") -> DataFrame:
     # See: https://www.cog-genomics.org/plink/1.9/formats#bim
     names = [f[0] for f in BIM_FIELDS]
     df = dd.read_csv(str(path) + ".bim", sep=sep, names=names, dtype=BIM_DF_DTYPE)
@@ -133,7 +135,57 @@ def read_plink(
     count_a1: bool = True,
     lock: bool = False,
     persist: bool = True,
-):
+) -> Dataset:
+    """Read PLINK dataset
+
+    Loads a single PLINK dataset as dask arrays within a Dataset
+    from bed, bim, and fam files.
+
+    Parameters
+    ----------
+    path : PathType
+        Path to PLINK file set.
+        This should not include a suffix, i.e. if the files are
+        at `data.{bed,fam,bim}` then only 'data' should be
+        provided (suffixes are added internally).
+    chunks : Union[str, int, tuple], optional
+        Chunk size for genotype (i.e. `.bed`) data, by default "auto"
+    fam_sep : str, optional
+        Delimiter for `.fam` file, by default "\t"
+    bim_sep : str, optional
+        Delimiter for `.bim` file, by default " "
+    bim_int_contig : bool, optional
+        Whether or not the contig/chromosome name in the `.bim`
+        file should be interpreted as an integer, by default False.
+        If False, then the `variant/contig` field in the resulting
+        dataset will contain the indexes of corresponding strings
+        encountered in the first `.bim` field.
+    count_a1 : bool, optional
+        Whether or not allele counts should be for A1 or A2,
+        by default True. Typically A1 is the minor allele
+        and should be counted instead of A2.  This is not enforced
+        by PLINK though and it is up to the data generating process
+        to ensure that A1 is in fact an alternate/minor/effect
+        allele. See https://www.cog-genomics.org/plink/1.9/formats
+        for more details.
+    lock : bool, optional
+        Whether or not to synchronize concurrent reads of `.bed`
+        file blocks, by default False. This is passed through to
+        [dask.array.from_array](https://docs.dask.org/en/latest/array-api.html#dask.array.from_array).
+    persist : bool, optional
+        Whether or not to persist `.fam` and `.bim` information in
+        memory, by default True.  This is an important performance
+        consideration as the plain text files for this data will
+        be read multiple times when False. This can lead to load
+        times that are upwards of 10x slower.
+
+    Returns
+    -------
+    Dataset
+        A dataset containing genotypes as 3D calls along with
+        all accompanying pedigree and variant information.
+    """
+
     # Load axis data first to determine dimension sizes
     df_fam = read_fam(path, sep=fam_sep)
     df_bim = read_bim(path, sep=bim_sep)
