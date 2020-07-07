@@ -20,6 +20,30 @@ def test_read_slicing(ds1):
     assert gt[:3, :5, :1].shape == (3, 5, 1)
 
 
+def test_encode_array():
+    def check(x, values, names):
+        v, n = pysnptools.encode_array(x)
+        np.testing.assert_equal(v, values)
+        np.testing.assert_equal(n, names)
+
+    check([], [], [])
+    check(["a"], [0], ["a"])
+    check(["a", "b"], [0, 1], ["a", "b"])
+    check(["b", "a"], [0, 1], ["b", "a"])
+    check(["a", "b", "b"], [0, 1, 1], ["a", "b"])
+    check(["b", "b", "a"], [0, 0, 1], ["b", "a"])
+    check(["b", "b", "a", "a"], [0, 0, 1, 1], ["b", "a"])
+    check(["c", "a", "a", "b"], [0, 1, 1, 2], ["c", "a", "b"])
+    check(["b", "b", "c", "c", "c", "a", "a"], [0, 0, 1, 1, 1, 2, 2], ["b", "c", "a"])
+    check(["b", "c", "b", "c", "a"], [0, 1, 0, 1, 2], ["b", "c", "a"])
+    check([2, 2, 1, 3, 1, 5, 5, 1], [0, 0, 1, 2, 1, 3, 3, 1], [2.0, 1.0, 3.0, 5.0])
+    check(
+        [2.0, 2.0, 1.0, 3.0, 1.0, 5.0, 5.0, 1.0],
+        [0, 0, 1, 2, 1, 3, 3, 1],
+        [2.0, 1.0, 3.0, 5.0],
+    )
+
+
 @pytest.mark.parametrize("ds1", [dict(bim_int_contig=True)], indirect=True)
 def test_read_int_contig(ds1):
     # Test contig parse as int (the value is always "1" in .bed for ds1)

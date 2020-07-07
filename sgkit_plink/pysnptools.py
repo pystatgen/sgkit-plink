@@ -126,6 +126,39 @@ def read_bim(path: PathType, sep: str = "\t") -> DataFrame:
     return df
 
 
+def encode_array(x):
+    """Encode array values as integers indexing unique values
+
+    The codes created for each unique element in the array correspond
+    to order of appearance, not the natural sort order for the array
+    dtype.
+
+    Examples
+    --------
+
+    >>> encode_array(['c', 'a', 'a', 'b'])
+    (array([0, 1, 1, 2]), array(['c', 'a', 'b'], dtype='<U1'))
+
+    Parameters
+    ----------
+    x : (M,) array-like
+        Array of elements to encode of any type
+
+    Returns
+    -------
+    indexes : (M,) ndarray
+        Encoded values as integer indices
+    values : ndarray
+        Unique values in original array in order of appearance
+    """
+    # argsort not implemented in dask: https://github.com/dask/dask/issues/4368
+    names, index, inverse = np.unique(x, return_index=True, return_inverse=True)
+    index = np.argsort(index)
+    rank = np.empty_like(index)
+    rank[index] = np.arange(len(index))
+    return rank[inverse], names[index]
+
+
 def read_plink(
     path: PathType,
     chunks: Union[str, int, tuple] = "auto",
@@ -226,15 +259,12 @@ def read_plink(
         variant_contig = arr_bim["contig"].astype("int16")
         variant_contig_names = da.unique(variant_contig).astype(str)
         variant_contig_names = list(variant_contig_names.compute())
-    # Otherwise index by unique name where index will correspond
-    # to lexsort on names, i.e. if contigs are 'chr1', 'chr2',
-    # ..., 'chr10' then 'chr10' comes before 'chr2'
+    # Otherwise create index for contig names based
+    # on order of appearance in underlying .bim file
     else:
-        variant_contig_names, variant_contig = da.unique(
-            arr_bim["contig"], return_inverse=True
-        )
-        variant_contig_names = list(variant_contig_names.compute())
+        variant_contig, variant_contig_names = encode_array(arr_bim["contig"].compute())
         variant_contig = variant_contig.astype("int16")
+        variant_contig_names = list(variant_contig_names)
 
     variant_position = arr_bim["pos"]
     a1 = arr_bim["a1"].astype("str")
