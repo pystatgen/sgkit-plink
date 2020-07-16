@@ -272,7 +272,6 @@ def read_plink(
 
     # Note: column_stack not implemented in Dask, must use [v|h]stack
     variant_alleles = da.hstack((a1[:, np.newaxis], a2[:, np.newaxis]))
-    # TODO: Why use bytes for this instead of string?
     variant_alleles = variant_alleles.astype("S")
     variant_id = arr_bim["variant_id"]
 
