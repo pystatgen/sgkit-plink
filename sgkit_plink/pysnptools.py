@@ -11,6 +11,7 @@ from xarray import Dataset
 
 from sgkit import create_genotype_call_dataset
 from sgkit.api import DIM_SAMPLE
+from sgkit.utils import encode_array
 
 PathType = Union[str, Path]
 
@@ -124,39 +125,6 @@ def read_bim(path: PathType, sep: str = "\t") -> DataFrame:
     df = dd.read_csv(str(path) + ".bim", sep=sep, names=names, dtype=BIM_DF_DTYPE)
     df["contig"] = df["contig"].where(df["contig"] != "0", None)
     return df
-
-
-def encode_array(x):
-    """Encode array values as integers indexing unique values
-
-    The codes created for each unique element in the array correspond
-    to order of appearance, not the natural sort order for the array
-    dtype.
-
-    Examples
-    --------
-
-    >>> encode_array(['c', 'a', 'a', 'b'])
-    (array([0, 1, 1, 2]), array(['c', 'a', 'b'], dtype='<U1'))
-
-    Parameters
-    ----------
-    x : (M,) array-like
-        Array of elements to encode of any type
-
-    Returns
-    -------
-    indexes : (M,) ndarray
-        Encoded values as integer indices
-    values : ndarray
-        Unique values in original array in order of appearance
-    """
-    # argsort not implemented in dask: https://github.com/dask/dask/issues/4368
-    names, index, inverse = np.unique(x, return_index=True, return_inverse=True)
-    index = np.argsort(index)
-    rank = np.empty_like(index)
-    rank[index] = np.arange(len(index))
-    return rank[inverse], names[index]
 
 
 def read_plink(
