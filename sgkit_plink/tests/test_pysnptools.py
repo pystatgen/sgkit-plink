@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import xarray as xr
 from sgkit_plink import pysnptools
 
 example_dataset_1 = "plink_sim_10s_100v_10pmiss"
@@ -9,6 +10,13 @@ example_dataset_1 = "plink_sim_10s_100v_10pmiss"
 def ds1(shared_datadir, request):
     path = shared_datadir / example_dataset_1
     return pysnptools.read_plink(path, bim_sep="\t", fam_sep="\t", **request.param)
+
+
+def test_read_multi_path(shared_datadir, ds1):
+    path = shared_datadir / example_dataset_1
+    paths = tuple(path.with_suffix(ext) for ext in [".bed", ".bim", ".fam"])
+    ds2 = pysnptools.read_plink(paths, bim_sep="\t", fam_sep="\t")
+    xr.testing.assert_equal(ds1, ds2)
 
 
 def test_read_slicing(ds1):

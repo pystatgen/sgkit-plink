@@ -1,6 +1,6 @@
 """PLINK 1.9 reader implementation"""
 from pathlib import Path
-from typing import Union
+from typing import Tuple, Union
 
 import dask.array as da
 import dask.dataframe as dd
@@ -67,21 +67,20 @@ class BedReader(object):
             raise IndexError(  # pragma: no cover
                 f"Indexer must be two-item tuple (received {len(idx)} slices)"
             )
-        # Slice using reversal of first two slices --
-        # pysnptools uses sample x variant orientation
-        arr = self.bed[idx[1::-1]].read(dtype=np.float32, view_ok=False).val.T
-        # Convert missing calls as nan to -1
-        arr = np.nan_to_num(arr, nan=-1.0)
+        # Slice using reversal of first two slices since
+        # pysnptools uses sample x variant orientation.
+        # Missing values are represented as -127 with int8 dtype,
+        # see: https://fastlmm.github.io/PySnpTools/#snpreader-bed
+        arr = (
+            self.bed[idx[1::-1]]
+            .read(dtype=np.int8, view_ok=True, _require_float32_64=False)
+            .val.T
+        )
         arr = arr.astype(self.dtype)
         # Add a ploidy dimension, so allele counts of 0, 1, 2 correspond to 00, 10, 11
-        arr = np.stack(
-            [
-                np.where(arr < 0, -1, np.where(arr == 0, 0, 1)),
-                np.where(arr < 0, -1, np.where(arr == 2, 1, 0)),
-            ],
-            axis=-1,
-        )
-
+        call0 = np.where(arr < 0, -1, np.where(arr == 0, 0, 1))
+        call1 = np.where(arr < 0, -1, np.where(arr == 2, 1, 0))
+        arr = np.stack([call0, call1], axis=-1)
         # Apply final slice to 3D result
         return arr[:, :, idx[-1]]
 
@@ -103,7 +102,7 @@ def _to_dict(df, dtype=None):
 def read_fam(path: PathType, sep: str = " ") -> DataFrame:
     # See: https://www.cog-genomics.org/plink/1.9/formats#fam
     names = [f[0] for f in FAM_FIELDS]
-    df = dd.read_csv(str(path) + ".fam", sep=sep, names=names, dtype=FAM_DF_DTYPE)
+    df = dd.read_csv(str(path), sep=sep, names=names, dtype=FAM_DF_DTYPE)
 
     def coerce_code(v, codes):
         # Set non-ints and unexpected codes to missing (-1)
@@ -122,13 +121,13 @@ def read_fam(path: PathType, sep: str = " ") -> DataFrame:
 def read_bim(path: PathType, sep: str = "\t") -> DataFrame:
     # See: https://www.cog-genomics.org/plink/1.9/formats#bim
     names = [f[0] for f in BIM_FIELDS]
-    df = dd.read_csv(str(path) + ".bim", sep=sep, names=names, dtype=BIM_DF_DTYPE)
+    df = dd.read_csv(str(path), sep=sep, names=names, dtype=BIM_DF_DTYPE)
     df["contig"] = df["contig"].where(df["contig"] != "0", None)
     return df
 
 
 def read_plink(
-    path: PathType,
+    path: Union[PathType, Tuple[PathType, PathType, PathType]],
     chunks: Union[str, int, tuple] = "auto",
     fam_sep: str = " ",
     bim_sep: str = "\t",
@@ -137,18 +136,20 @@ def read_plink(
     lock: bool = False,
     persist: bool = True,
 ) -> Dataset:
-    """Read PLINK dataset
+    """Read PLINK dataset.
 
     Loads a single PLINK dataset as dask arrays within a Dataset
     from bed, bim, and fam files.
 
     Parameters
     ----------
-    path : PathType
-        Path to PLINK file set.
-        This should not include a suffix, i.e. if the files are
-        at `data.{bed,fam,bim}` then only 'data' should be
-        provided (suffixes are added internally).
+    path : Union[PathType, Tuple[PathType, PathType, PathType]]
+        Path to PLINK file set.  This can either be one path or 3.
+        If one path, then that path should not include a suffix such
+        that if the files are at `data.{bed,bim,fam}` then only 'data'
+        should be provided (suffixes are added internally). If 3 paths,
+        then the paths must correspond to the `bed` file, the `bim`
+        file and the `fam` file in that order (with extensions).
     chunks : Union[str, int, tuple], optional
         Chunk size for genotype (i.e. `.bed`) data, by default "auto"
     fam_sep : str, optional
@@ -164,7 +165,7 @@ def read_plink(
     count_a1 : bool, optional
         Whether or not allele counts should be for A1 or A2,
         by default True. Typically A1 is the minor allele
-        and should be counted instead of A2.  This is not enforced
+        and should be counted instead of A2. This is not enforced
         by PLINK though and it is up to the data generating process
         to ensure that A1 is in fact an alternate/minor/effect
         allele. See https://www.cog-genomics.org/plink/1.9/formats
@@ -175,7 +176,7 @@ def read_plink(
         [dask.array.from_array](https://docs.dask.org/en/latest/array-api.html#dask.array.from_array).
     persist : bool, optional
         Whether or not to persist `.fam` and `.bim` information in
-        memory, by default True.  This is an important performance
+        memory, by default True. This is an important performance
         consideration as the plain text files for this data will
         be read multiple times when False. This can lead to load
         times that are upwards of 10x slower.
@@ -198,10 +199,13 @@ def read_plink(
 
         See https://www.cog-genomics.org/plink/1.9/formats#fam for more details.
     """
+    if not isinstance(path, tuple):
+        path = tuple(Path(path).with_suffix(ext) for ext in [".bed", ".bim", ".fam"])
+    bed_path, bim_path, fam_path = path
 
     # Load axis data first to determine dimension sizes
-    df_fam = read_fam(path, sep=fam_sep)
-    df_bim = read_bim(path, sep=bim_sep)
+    df_fam = read_fam(fam_path, sep=fam_sep)
+    df_bim = read_bim(bim_path, sep=bim_sep)
 
     if persist:
         df_fam = df_fam.persist()
@@ -213,7 +217,7 @@ def read_plink(
     # Load genotyping data
     call_genotype = da.from_array(
         # Make sure to use asarray=False in order for masked arrays to propagate
-        BedReader(path, (len(df_bim), len(df_fam)), count_A1=count_a1),
+        BedReader(bed_path, (len(df_bim), len(df_fam)), count_A1=count_a1),
         chunks=chunks,
         # Lock must be true with multiprocessing dask scheduler
         # to not get pysnptools errors (it works w/ threading backend though)
