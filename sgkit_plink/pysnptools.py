@@ -189,10 +189,10 @@ def read_plink(
         of this dataset matches that of `sgkit.create_genotype_call_dataset`
         with all pedigree-specific fields defined as:
             - sample/family_id: Family identifier commonly referred to as FID
-            - sample/id: Within-family identifier for sample
+            - sample_id: Within-family identifier for sample
             - sample/paternal_id: Within-family identifier for father of sample
             - sample/maternal_id: Within-family identifier for mother of sample
-            - sample/sex: Sex code equal to 1 for male, 2 for female, and -1
+            - sample_sex: Sex code equal to 1 for male, 2 for female, and -1
                 for missing
             - sample/phenotype: Phenotype code equal to 1 for control, 2 for case,
                 and -1 for missing
@@ -261,6 +261,6 @@ def read_plink(
 
     # Assign PLINK-specific pedigree fields
     ds = ds.assign(
-        **{f"sample/{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
+        **{f"sample_{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
     )
     return ds
