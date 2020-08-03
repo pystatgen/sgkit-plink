@@ -128,6 +128,7 @@ def read_bim(path: PathType, sep: str = "\t") -> DataFrame:
 
 
 def read_plink(
+    *,
     path: Optional[PathType] = None,
     bed_path: Optional[PathType] = None,
     bim_path: Optional[PathType] = None,
