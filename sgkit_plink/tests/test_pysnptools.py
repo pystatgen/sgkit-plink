@@ -24,6 +24,14 @@ def test_read_multi_path(shared_datadir, ds1):
     xr.testing.assert_equal(ds1, ds2)
 
 
+def test_raise_on_both_path_types():
+    with pytest.raises(
+        ValueError,
+        match="Either `path` or all 3 of `{bed,bim,fam}_path` must be specified but not both",
+    ):
+        read_plink(path="x", bed_path="x")
+
+
 def test_read_slicing(ds1):
     gt = ds1["call/genotype"]
     shape = gt.shape
