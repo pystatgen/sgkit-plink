@@ -1,6 +1,6 @@
 """PLINK 1.9 reader implementation"""
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Optional, Union
 
 import dask.array as da
 import dask.dataframe as dd
@@ -127,7 +127,11 @@ def read_bim(path: PathType, sep: str = "\t") -> DataFrame:
 
 
 def read_plink(
-    path: Union[PathType, Tuple[PathType, PathType, PathType]],
+    *,
+    path: Optional[PathType] = None,
+    bed_path: Optional[PathType] = None,
+    bim_path: Optional[PathType] = None,
+    fam_path: Optional[PathType] = None,
     chunks: Union[str, int, tuple] = "auto",
     fam_sep: str = " ",
     bim_sep: str = "\t",
@@ -143,13 +147,25 @@ def read_plink(
 
     Parameters
     ----------
-    path : Union[PathType, Tuple[PathType, PathType, PathType]]
-        Path to PLINK file set.  This can either be one path or 3.
-        If one path, then that path should not include a suffix such
-        that if the files are at `data.{bed,bim,fam}` then only 'data'
-        should be provided (suffixes are added internally). If 3 paths,
-        then the paths must correspond to the `bed` file, the `bim`
-        file and the `fam` file in that order (with extensions).
+    path : Optional[PathType]
+        Path to PLINK file set.
+        This should not include a suffix, i.e. if the files are
+        at `data.{bed,fam,bim}` then only 'data' should be
+        provided (suffixes are added internally).
+        Either this path must be provided or all 3 of
+        `bed_path`, `bim_path` and `fam_path`.
+    bed_path: Optional[PathType]
+        Path to PLINK bed file.
+        This should be a full path including the `.bed` extension
+        and cannot be specified in conjunction with `path`.
+    bim_path: Optional[PathType]
+        Path to PLINK bim file.
+        This should be a full path including the `.bim` extension
+        and cannot be specified in conjunction with `path`.
+    fam_path: Optional[PathType]
+        Path to PLINK fam file.
+        This should be a full path including the `.fam` extension
+        and cannot be specified in conjunction with `path`.
     chunks : Union[str, int, tuple], optional
         Chunk size for genotype (i.e. `.bed`) data, by default "auto"
     fam_sep : str, optional
@@ -198,10 +214,20 @@ def read_plink(
                 and -1 for missing
 
         See https://www.cog-genomics.org/plink/1.9/formats#fam for more details.
+
+    Raises
+    ------
+    ValueError
+        If `path` and one of `bed_path`, `bim_path` or `fam_path` are provided.
     """
-    if not isinstance(path, tuple):
-        path = tuple(Path(path).with_suffix(ext) for ext in [".bed", ".bim", ".fam"])
-    bed_path, bim_path, fam_path = path
+    if path and (bed_path or bim_path or fam_path):
+        raise ValueError(
+            "Either `path` or all 3 of `{bed,bim,fam}_path` must be specified but not both"
+        )
+    if path:
+        bed_path, bim_path, fam_path = [
+            f"{path}.{ext}" for ext in ["bed", "bim", "fam"]
+        ]
 
     # Load axis data first to determine dimension sizes
     df_fam = read_fam(fam_path, sep=fam_sep)
@@ -223,7 +249,7 @@ def read_plink(
         # to not get pysnptools errors (it works w/ threading backend though)
         lock=lock,
         asarray=False,
-        name=f"pysnptools:read_plink:{path}",
+        name=f"pysnptools:read_plink:{bed_path}",
     )
 
     # If contigs are already integers, use them as-is
