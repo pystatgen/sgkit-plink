@@ -81,7 +81,6 @@ class BedReader(object):
             ],
             axis=-1,
         )
-
         # Apply final slice to 3D result
         return arr[:, :, idx[-1]]
 
@@ -141,7 +140,7 @@ def read_plink(
     lock: bool = False,
     persist: bool = True,
 ) -> Dataset:
-    """Read PLINK dataset
+    """Read PLINK dataset.
 
     Loads a single PLINK dataset as dask arrays within a Dataset
     from bed, bim, and fam files.
@@ -182,7 +181,7 @@ def read_plink(
     count_a1 : bool, optional
         Whether or not allele counts should be for A1 or A2,
         by default True. Typically A1 is the minor allele
-        and should be counted instead of A2.  This is not enforced
+        and should be counted instead of A2. This is not enforced
         by PLINK though and it is up to the data generating process
         to ensure that A1 is in fact an alternate/minor/effect
         allele. See https://www.cog-genomics.org/plink/1.9/formats
@@ -193,7 +192,7 @@ def read_plink(
         [dask.array.from_array](https://docs.dask.org/en/latest/array-api.html#dask.array.from_array).
     persist : bool, optional
         Whether or not to persist `.fam` and `.bim` information in
-        memory, by default True.  This is an important performance
+        memory, by default True. This is an important performance
         consideration as the plain text files for this data will
         be read multiple times when False. This can lead to load
         times that are upwards of 10x slower.
@@ -206,10 +205,10 @@ def read_plink(
         of this dataset matches that of `sgkit.create_genotype_call_dataset`
         with all pedigree-specific fields defined as:
             - sample/family_id: Family identifier commonly referred to as FID
-            - sample/id: Within-family identifier for sample
+            - sample_id: Within-family identifier for sample
             - sample/paternal_id: Within-family identifier for father of sample
             - sample/maternal_id: Within-family identifier for mother of sample
-            - sample/sex: Sex code equal to 1 for male, 2 for female, and -1
+            - sample_sex: Sex code equal to 1 for male, 2 for female, and -1
                 for missing
             - sample/phenotype: Phenotype code equal to 1 for control, 2 for case,
                 and -1 for missing
@@ -288,6 +287,6 @@ def read_plink(
 
     # Assign PLINK-specific pedigree fields
     ds = ds.assign(
-        **{f"sample/{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
+        **{f"sample_{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
     )
     return ds
