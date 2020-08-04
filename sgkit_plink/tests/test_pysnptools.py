@@ -32,6 +32,17 @@ def test_raise_on_both_path_types():
         read_plink(path="x", bed_path="x")
 
 
+def test_fixlen_str_variable(ds1):
+    assert ds1["sample_id"].dtype == np.dtype("<U3")
+    assert ds1["variant_id"].dtype == np.dtype("<U13")
+    assert ds1["variant_allele"].dtype == np.dtype("|S6")
+    assert ds1["sample_family_id"].dtype == np.dtype("<U1")
+    # TODO: Remove 'None' strings https://github.com/pystatgen/sgkit-plink/issues/16
+    # which should make these <U1
+    assert ds1["sample_maternal_id"].dtype == np.dtype("<U4")
+    assert ds1["sample_paternal_id"].dtype == np.dtype("<U4")
+
+
 def test_read_slicing(ds1):
     gt = ds1["call_genotype"]
     shape = gt.shape
