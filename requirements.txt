@@ -1,4 +1,4 @@
 numpy
 xarray
-pysnptools>=0.4.20
+pysnptools>=0.4.19
 git+https://github.com/pystatgen/sgkit
