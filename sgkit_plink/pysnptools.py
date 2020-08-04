@@ -1,6 +1,6 @@
 """PLINK 1.9 reader implementation"""
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import dask.array as da
 import dask.dataframe as dd
@@ -103,7 +103,7 @@ def _to_dict(df, dtype=None):
 def read_fam(path: PathType, sep: str = " ") -> DataFrame:
     # See: https://www.cog-genomics.org/plink/1.9/formats#fam
     names = [f[0] for f in FAM_FIELDS]
-    df = dd.read_csv(str(path) + ".fam", sep=sep, names=names, dtype=FAM_DF_DTYPE)
+    df = dd.read_csv(str(path), sep=sep, names=names, dtype=FAM_DF_DTYPE)
 
     def coerce_code(v, codes):
         # Set non-ints and unexpected codes to missing (-1)
@@ -122,13 +122,17 @@ def read_fam(path: PathType, sep: str = " ") -> DataFrame:
 def read_bim(path: PathType, sep: str = "\t") -> DataFrame:
     # See: https://www.cog-genomics.org/plink/1.9/formats#bim
     names = [f[0] for f in BIM_FIELDS]
-    df = dd.read_csv(str(path) + ".bim", sep=sep, names=names, dtype=BIM_DF_DTYPE)
+    df = dd.read_csv(str(path), sep=sep, names=names, dtype=BIM_DF_DTYPE)
     df["contig"] = df["contig"].where(df["contig"] != "0", None)
     return df
 
 
 def read_plink(
-    path: PathType,
+    *,
+    path: Optional[PathType] = None,
+    bed_path: Optional[PathType] = None,
+    bim_path: Optional[PathType] = None,
+    fam_path: Optional[PathType] = None,
     chunks: Union[str, int, tuple] = "auto",
     fam_sep: str = " ",
     bim_sep: str = "\t",
@@ -144,11 +148,25 @@ def read_plink(
 
     Parameters
     ----------
-    path : PathType
+    path : Optional[PathType]
         Path to PLINK file set.
         This should not include a suffix, i.e. if the files are
         at `data.{bed,fam,bim}` then only 'data' should be
         provided (suffixes are added internally).
+        Either this path must be provided or all 3 of
+        `bed_path`, `bim_path` and `fam_path`.
+    bed_path: Optional[PathType]
+        Path to PLINK bed file.
+        This should be a full path including the `.bed` extension
+        and cannot be specified in conjunction with `path`.
+    bim_path: Optional[PathType]
+        Path to PLINK bim file.
+        This should be a full path including the `.bim` extension
+        and cannot be specified in conjunction with `path`.
+    fam_path: Optional[PathType]
+        Path to PLINK fam file.
+        This should be a full path including the `.fam` extension
+        and cannot be specified in conjunction with `path`.
     chunks : Union[str, int, tuple], optional
         Chunk size for genotype (i.e. `.bed`) data, by default "auto"
     fam_sep : str, optional
@@ -197,11 +215,24 @@ def read_plink(
                 and -1 for missing
 
         See https://www.cog-genomics.org/plink/1.9/formats#fam for more details.
+
+    Raises
+    ------
+    ValueError
+        If `path` and one of `bed_path`, `bim_path` or `fam_path` are provided.
     """
+    if path and (bed_path or bim_path or fam_path):
+        raise ValueError(
+            "Either `path` or all 3 of `{bed,bim,fam}_path` must be specified but not both"
+        )
+    if path:
+        bed_path, bim_path, fam_path = [
+            f"{path}.{ext}" for ext in ["bed", "bim", "fam"]
+        ]
 
     # Load axis data first to determine dimension sizes
-    df_fam = read_fam(path, sep=fam_sep)
-    df_bim = read_bim(path, sep=bim_sep)
+    df_fam = read_fam(fam_path, sep=fam_sep)
+    df_bim = read_bim(bim_path, sep=bim_sep)
 
     if persist:
         df_fam = df_fam.persist()
@@ -213,13 +244,13 @@ def read_plink(
     # Load genotyping data
     call_genotype = da.from_array(
         # Make sure to use asarray=False in order for masked arrays to propagate
-        BedReader(path, (len(df_bim), len(df_fam)), count_A1=count_a1),
+        BedReader(bed_path, (len(df_bim), len(df_fam)), count_A1=count_a1),
         chunks=chunks,
         # Lock must be true with multiprocessing dask scheduler
         # to not get pysnptools errors (it works w/ threading backend though)
         lock=lock,
         asarray=False,
-        name=f"pysnptools:read_plink:{path}",
+        name=f"pysnptools:read_plink:{bed_path}",
     )
 
     # If contigs are already integers, use them as-is
