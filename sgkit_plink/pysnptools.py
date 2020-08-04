@@ -67,20 +67,20 @@ class BedReader(object):
             raise IndexError(  # pragma: no cover
                 f"Indexer must be two-item tuple (received {len(idx)} slices)"
             )
-        # Slice using reversal of first two slices since
-        # pysnptools uses sample x variant orientation.
-        # Missing values are represented as -127 with int8 dtype,
-        # see: https://fastlmm.github.io/PySnpTools/#snpreader-bed
-        arr = (
-            self.bed[idx[1::-1]]
-            .read(dtype=np.int8, view_ok=True, _require_float32_64=False)
-            .val.T
-        )
+        # Slice using reversal of first two slices --
+        # pysnptools uses sample x variant orientation
+        arr = self.bed[idx[1::-1]].read(dtype=np.float32, view_ok=False).val.T
+        # Convert missing calls as nan to -1
+        arr = np.nan_to_num(arr, nan=-1.0)
         arr = arr.astype(self.dtype)
         # Add a ploidy dimension, so allele counts of 0, 1, 2 correspond to 00, 10, 11
-        call0 = np.where(arr < 0, -1, np.where(arr == 0, 0, 1))
-        call1 = np.where(arr < 0, -1, np.where(arr == 2, 1, 0))
-        arr = np.stack([call0, call1], axis=-1)
+        arr = np.stack(
+            [
+                np.where(arr < 0, -1, np.where(arr == 0, 0, 1)),
+                np.where(arr < 0, -1, np.where(arr == 2, 1, 0)),
+            ],
+            axis=-1,
+        )
         # Apply final slice to 3D result
         return arr[:, :, idx[-1]]
 
@@ -205,10 +205,10 @@ def read_plink(
         of this dataset matches that of `sgkit.create_genotype_call_dataset`
         with all pedigree-specific fields defined as:
             - sample/family_id: Family identifier commonly referred to as FID
-            - sample/id: Within-family identifier for sample
+            - sample_id: Within-family identifier for sample
             - sample/paternal_id: Within-family identifier for father of sample
             - sample/maternal_id: Within-family identifier for mother of sample
-            - sample/sex: Sex code equal to 1 for male, 2 for female, and -1
+            - sample_sex: Sex code equal to 1 for male, 2 for female, and -1
                 for missing
             - sample/phenotype: Phenotype code equal to 1 for control, 2 for case,
                 and -1 for missing
@@ -287,6 +287,6 @@ def read_plink(
 
     # Assign PLINK-specific pedigree fields
     ds = ds.assign(
-        **{f"sample/{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
+        **{f"sample_{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
     )
     return ds
