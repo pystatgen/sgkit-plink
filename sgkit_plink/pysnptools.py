@@ -1,12 +1,12 @@
 """PLINK 1.9 reader implementation"""
 from pathlib import Path
-from typing import Optional, Union, Mapping, Any
+from typing import Any, Mapping, Optional, Union
 
 import dask.array as da
 import dask.dataframe as dd
 import numpy as np
-from dask.dataframe import DataFrame
 from dask.array import Array
+from dask.dataframe import DataFrame
 from pysnptools.snpreader import Bed
 from xarray import Dataset
 
@@ -94,12 +94,10 @@ class BedReader(object):
 
 
 def _max_str_len(arr: Array) -> Array:
-    return arr.map_blocks(
-        lambda s: np.char.str_len(s.astype(str)), dtype=np.int8
-    ).max()
+    return arr.map_blocks(lambda s: np.char.str_len(s.astype(str)), dtype=np.int8).max()
 
 
-def _to_dict(df: DataFrame, dtype: Mapping[str, Any]=None):
+def _to_dict(df: DataFrame, dtype: Mapping[str, Any] = None):
     arrs = {}
     for c in df:
         a = df[c].to_dask_array(lengths=True)
@@ -107,7 +105,7 @@ def _to_dict(df: DataFrame, dtype: Mapping[str, Any]=None):
         if dtype:
             dt = dtype[c]
         kind = np.dtype(dt).kind
-        if kind in ['U', 'S']:
+        if kind in ["U", "S"]:
             # Compute fixed-length string dtype for array
             max_len = _max_str_len(a).compute()
             dt = f"{kind}{max_len}"
