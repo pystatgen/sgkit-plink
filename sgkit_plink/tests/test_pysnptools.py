@@ -21,7 +21,7 @@ def test_read_multi_path(shared_datadir, ds1):
         bim_sep="\t",
         fam_sep="\t",
     )
-    xr.testing.assert_equal(ds1, ds2)
+    xr.testing.assert_equal(ds1, ds2)  # type: ignore[no-untyped-call]
 
 
 def test_raise_on_both_path_types():

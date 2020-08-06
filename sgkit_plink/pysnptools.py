@@ -1,6 +1,6 @@
 """PLINK 1.9 reader implementation"""
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import dask.array as da
 import dask.dataframe as dd
@@ -39,7 +39,13 @@ BIM_ARRAY_DTYPE = dict([(f[0], f[2]) for f in BIM_FIELDS])
 
 
 class BedReader(object):
-    def __init__(self, path, shape, dtype=np.int8, count_A1=True):
+    def __init__(
+        self,
+        path: PathType,
+        shape: Tuple[int, int],
+        dtype: Any = np.int8,
+        count_A1: bool = True,
+    ) -> None:
         # n variants (sid = SNP id), n samples (iid = Individual id)
         n_sid, n_iid = shape
         # Initialize Bed with empty arrays for axis data, otherwise it will
@@ -58,7 +64,7 @@ class BedReader(object):
         self.dtype = dtype
         self.ndim = 3
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: Tuple[Any, ...]) -> np.ndarray:
         if not isinstance(idx, tuple):
             raise IndexError(  # pragma: no cover
                 f"Indexer must be tuple (received {type(idx)})"
@@ -84,7 +90,7 @@ class BedReader(object):
         # Apply final slice to 3D result
         return arr[:, :, idx[-1]]
 
-    def close(self):
+    def close(self) -> None:
         # This is not actually crucial since a Bed instance with no
         # in-memory bim/map/fam data is essentially just a file pointer
         # but this will still be problematic if the an array is created
@@ -92,7 +98,7 @@ class BedReader(object):
         self.bed._close_bed()  # pragma: no cover
 
 
-def _to_dict(df, dtype=None):
+def _to_dict(df: dd.DataFrame, dtype: Any = None) -> Dict[str, da.Array]:
     return {
         c: df[c].to_dask_array(lengths=True).astype(dtype[c] if dtype else df[c].dtype)
         for c in df
@@ -104,7 +110,7 @@ def read_fam(path: PathType, sep: str = " ") -> DataFrame:
     names = [f[0] for f in FAM_FIELDS]
     df = dd.read_csv(str(path), sep=sep, names=names, dtype=FAM_DF_DTYPE)
 
-    def coerce_code(v, codes):
+    def coerce_code(v: dd.Series, codes: List[int]) -> dd.Series:
         # Set non-ints and unexpected codes to missing (-1)
         v = dd.to_numeric(v, errors="coerce")
         v = v.where(v.isin(codes), np.nan)
@@ -132,7 +138,7 @@ def read_plink(
     bed_path: Optional[PathType] = None,
     bim_path: Optional[PathType] = None,
     fam_path: Optional[PathType] = None,
-    chunks: Union[str, int, tuple] = "auto",
+    chunks: Union[str, int, tuple] = "auto",  # type: ignore[type-arg]
     fam_sep: str = " ",
     bim_sep: str = "\t",
     bim_int_contig: bool = False,
@@ -230,8 +236,8 @@ def read_plink(
         ]
 
     # Load axis data first to determine dimension sizes
-    df_fam = read_fam(fam_path, sep=fam_sep)
-    df_bim = read_bim(bim_path, sep=bim_sep)
+    df_fam = read_fam(fam_path, sep=fam_sep)  # type: ignore[arg-type]
+    df_bim = read_bim(bim_path, sep=bim_sep)  # type: ignore[arg-type]
 
     if persist:
         df_fam = df_fam.persist()
@@ -243,7 +249,7 @@ def read_plink(
     # Load genotyping data
     call_genotype = da.from_array(
         # Make sure to use asarray=False in order for masked arrays to propagate
-        BedReader(bed_path, (len(df_bim), len(df_fam)), count_A1=count_a1),
+        BedReader(bed_path, (len(df_bim), len(df_fam)), count_A1=count_a1),  # type: ignore[arg-type]
         chunks=chunks,
         # Lock must be true with multiprocessing dask scheduler
         # to not get pysnptools errors (it works w/ threading backend though)
@@ -289,4 +295,4 @@ def read_plink(
     ds = ds.assign(
         **{f"sample_{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
     )
-    return ds
+    return ds  # type: ignore[no-any-return]
