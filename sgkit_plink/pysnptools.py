@@ -210,13 +210,13 @@ def read_plink(
         all accompanying pedigree and variant information. The content
         of this dataset matches that of `sgkit.create_genotype_call_dataset`
         with all pedigree-specific fields defined as:
-            - sample/family_id: Family identifier commonly referred to as FID
+            - sample_family_id: Family identifier commonly referred to as FID
             - sample_id: Within-family identifier for sample
-            - sample/paternal_id: Within-family identifier for father of sample
-            - sample/maternal_id: Within-family identifier for mother of sample
+            - sample_paternal_id: Within-family identifier for father of sample
+            - sample_maternal_id: Within-family identifier for mother of sample
             - sample_sex: Sex code equal to 1 for male, 2 for female, and -1
                 for missing
-            - sample/phenotype: Phenotype code equal to 1 for control, 2 for case,
+            - sample_phenotype: Phenotype code equal to 1 for control, 2 for case,
                 and -1 for missing
 
         See https://www.cog-genomics.org/plink/1.9/formats#fam for more details.
