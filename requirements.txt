@@ -1,4 +1,5 @@
 numpy
 xarray
-pysnptools>=0.4.19
+dask[dataframe,array]
+pysnptools>=0.4.20
 git+https://github.com/pystatgen/sgkit

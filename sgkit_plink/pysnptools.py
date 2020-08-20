@@ -1,6 +1,6 @@
 """PLINK 1.9 reader implementation"""
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
+from typing import Any, List, Mapping, Optional, Tuple, Union
 
 import dask.array as da
 import dask.dataframe as dd
@@ -40,7 +40,13 @@ BIM_ARRAY_DTYPE = dict([(f[0], f[2]) for f in BIM_FIELDS])
 
 
 class BedReader(object):
-    def __init__(self, path, shape, dtype=np.int8, count_A1=True):
+    def __init__(
+        self,
+        path: PathType,
+        shape: Tuple[int, int],
+        dtype: Any = np.int8,
+        count_A1: bool = True,
+    ) -> None:
         # n variants (sid = SNP id), n samples (iid = Individual id)
         n_sid, n_iid = shape
         # Initialize Bed with empty arrays for axis data, otherwise it will
@@ -59,7 +65,7 @@ class BedReader(object):
         self.dtype = dtype
         self.ndim = 3
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: Tuple[Any, ...]) -> np.ndarray:
         if not isinstance(idx, tuple):
             raise IndexError(  # pragma: no cover
                 f"Indexer must be tuple (received {type(idx)})"
@@ -68,24 +74,24 @@ class BedReader(object):
             raise IndexError(  # pragma: no cover
                 f"Indexer must be two-item tuple (received {len(idx)} slices)"
             )
-        # Slice using reversal of first two slices --
-        # pysnptools uses sample x variant orientation
-        arr = self.bed[idx[1::-1]].read(dtype=np.float32, view_ok=False).val.T
-        # Convert missing calls as nan to -1
-        arr = np.nan_to_num(arr, nan=-1.0)
+        # Slice using reversal of first two slices since
+        # pysnptools uses sample x variant orientation.
+        # Missing values are represented as -127 with int8 dtype,
+        # see: https://fastlmm.github.io/PySnpTools/#snpreader-bed
+        arr = (
+            self.bed[idx[1::-1]]
+            .read(dtype=np.int8, view_ok=True, _require_float32_64=False)
+            .val.T
+        )
         arr = arr.astype(self.dtype)
         # Add a ploidy dimension, so allele counts of 0, 1, 2 correspond to 00, 10, 11
-        arr = np.stack(
-            [
-                np.where(arr < 0, -1, np.where(arr == 0, 0, 1)),
-                np.where(arr < 0, -1, np.where(arr == 2, 1, 0)),
-            ],
-            axis=-1,
-        )
+        call0 = np.where(arr < 0, -1, np.where(arr == 0, 0, 1))
+        call1 = np.where(arr < 0, -1, np.where(arr == 2, 1, 0))
+        arr = np.stack([call0, call1], axis=-1)
         # Apply final slice to 3D result
         return arr[:, :, idx[-1]]
 
-    def close(self):
+    def close(self) -> None:
         # This is not actually crucial since a Bed instance with no
         # in-memory bim/map/fam data is essentially just a file pointer
         # but this will still be problematic if the an array is created
@@ -97,7 +103,9 @@ def _max_str_len(arr: Array) -> Array:
     return arr.map_blocks(lambda s: np.char.str_len(s.astype(str)), dtype=np.int8).max()
 
 
-def _to_dict(df: DataFrame, dtype: Mapping[str, Any] = None):
+def _to_dict(
+    df: DataFrame, dtype: Optional[Mapping[str, Any]] = None
+) -> Mapping[str, Any]:
     arrs = {}
     for c in df:
         a = df[c].to_dask_array(lengths=True)
@@ -118,7 +126,7 @@ def read_fam(path: PathType, sep: str = " ") -> DataFrame:
     names = [f[0] for f in FAM_FIELDS]
     df = dd.read_csv(str(path), sep=sep, names=names, dtype=FAM_DF_DTYPE)
 
-    def coerce_code(v, codes):
+    def coerce_code(v: dd.Series, codes: List[int]) -> dd.Series:
         # Set non-ints and unexpected codes to missing (-1)
         v = dd.to_numeric(v, errors="coerce")
         v = v.where(v.isin(codes), np.nan)
@@ -146,7 +154,7 @@ def read_plink(
     bed_path: Optional[PathType] = None,
     bim_path: Optional[PathType] = None,
     fam_path: Optional[PathType] = None,
-    chunks: Union[str, int, tuple] = "auto",
+    chunks: Union[str, int, tuple] = "auto",  # type: ignore[type-arg]
     fam_sep: str = " ",
     bim_sep: str = "\t",
     bim_int_contig: bool = False,
@@ -218,13 +226,13 @@ def read_plink(
         all accompanying pedigree and variant information. The content
         of this dataset matches that of `sgkit.create_genotype_call_dataset`
         with all pedigree-specific fields defined as:
-            - sample/family_id: Family identifier commonly referred to as FID
+            - sample_family_id: Family identifier commonly referred to as FID
             - sample_id: Within-family identifier for sample
-            - sample/paternal_id: Within-family identifier for father of sample
-            - sample/maternal_id: Within-family identifier for mother of sample
+            - sample_paternal_id: Within-family identifier for father of sample
+            - sample_maternal_id: Within-family identifier for mother of sample
             - sample_sex: Sex code equal to 1 for male, 2 for female, and -1
                 for missing
-            - sample/phenotype: Phenotype code equal to 1 for control, 2 for case,
+            - sample_phenotype: Phenotype code equal to 1 for control, 2 for case,
                 and -1 for missing
 
         See https://www.cog-genomics.org/plink/1.9/formats#fam for more details.
@@ -244,8 +252,8 @@ def read_plink(
         ]
 
     # Load axis data first to determine dimension sizes
-    df_fam = read_fam(fam_path, sep=fam_sep)
-    df_bim = read_bim(bim_path, sep=bim_sep)
+    df_fam = read_fam(fam_path, sep=fam_sep)  # type: ignore[arg-type]
+    df_bim = read_bim(bim_path, sep=bim_sep)  # type: ignore[arg-type]
 
     if persist:
         df_fam = df_fam.persist()
@@ -257,7 +265,7 @@ def read_plink(
     # Load genotyping data
     call_genotype = da.from_array(
         # Make sure to use asarray=False in order for masked arrays to propagate
-        BedReader(bed_path, (len(df_bim), len(df_fam)), count_A1=count_a1),
+        BedReader(bed_path, (len(df_bim), len(df_fam)), count_A1=count_a1),  # type: ignore[arg-type]
         chunks=chunks,
         # Lock must be true with multiprocessing dask scheduler
         # to not get pysnptools errors (it works w/ threading backend though)
@@ -303,4 +311,4 @@ def read_plink(
     ds = ds.assign(
         **{f"sample_{f}": (DIM_SAMPLE, arr_fam[f]) for f in arr_fam if f != "member_id"}
     )
-    return ds
+    return ds  # type: ignore[no-any-return]

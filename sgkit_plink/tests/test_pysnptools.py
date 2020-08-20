@@ -3,6 +3,11 @@ import pytest
 import xarray as xr
 from sgkit_plink.pysnptools import read_plink
 
+# This data was generated externally using Hail
+# for 10 samples, 100 variants, and genotype calls
+# that are missing in ~10% of cases.
+# TODO: document and move code to central location
+# (cf. https://github.com/pystatgen/sgkit-plink/pull/20#discussion_r466907811)
 example_dataset_1 = "plink_sim_10s_100v_10pmiss"
 
 
@@ -21,7 +26,7 @@ def test_read_multi_path(shared_datadir, ds1):
         bim_sep="\t",
         fam_sep="\t",
     )
-    xr.testing.assert_equal(ds1, ds2)
+    xr.testing.assert_equal(ds1, ds2)  # type: ignore[no-untyped-call]
 
 
 def test_raise_on_both_path_types():
