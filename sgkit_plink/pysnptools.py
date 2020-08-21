@@ -7,7 +7,7 @@ import dask.dataframe as dd
 import numpy as np
 from dask.array import Array
 from dask.dataframe import DataFrame
-from pysnptools.snpreader import Bed
+from bed_reader import open_bed
 from xarray import Dataset
 
 from sgkit import create_genotype_call_dataset
@@ -51,15 +51,12 @@ class BedReader(object):
         n_sid, n_iid = shape
         # Initialize Bed with empty arrays for axis data, otherwise it will
         # load the bim/map/fam files entirely into memory (it does not do out-of-core for those)
-        self.bed = Bed(
-            str(path),
+        self.bed = open_bed(
+            path,
             count_A1=count_A1,
-            # Array (n_sample, 2) w/ FID and IID
-            iid=np.empty((n_iid, 2), dtype="str"),
-            # SNP id array (n_variants)
-            sid=np.empty((n_sid,), dtype="str"),
-            # Contig and positions array (n_variants, 3)
-            pos=np.empty((n_sid, 3), dtype="int"),
+            iid_count=n_iid,
+            sid_count=n_sid,
+            num_threads=None, # NOTE: Default: Use 'em all!
         )
         self.shape = (n_sid, n_iid, 2)
         self.dtype = dtype
@@ -75,14 +72,12 @@ class BedReader(object):
                 f"Indexer must be two-item tuple (received {len(idx)} slices)"
             )
         # Slice using reversal of first two slices since
-        # pysnptools uses sample x variant orientation.
+        # bed-reader uses sample x variant orientation.
         # Missing values are represented as -127 with int8 dtype,
         # see: https://fastlmm.github.io/PySnpTools/#snpreader-bed
-        arr = (
-            self.bed[idx[1::-1]]
-            .read(dtype=np.int8, view_ok=True, _require_float32_64=False)
-            .val.T
-        )
+        arr = self.bed.read(index=(idx[1],idx[0]),dtype=np.int8,order='F').T
+        # NOTE: bed-reader can return float32 and float64, too, so this copy could be avoided
+        #       (missing would then be NaN)
         arr = arr.astype(self.dtype)
         # Add a ploidy dimension, so allele counts of 0, 1, 2 correspond to 00, 10, 11
         call0 = np.where(arr < 0, -1, np.where(arr == 0, 0, 1))
