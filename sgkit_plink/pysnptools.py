@@ -56,7 +56,7 @@ class BedReader(object):
             count_A1=count_A1,
             iid_count=n_iid,
             sid_count=n_sid,
-            num_threads=None, # NOTE: Default: Use 'em all!
+            num_threads=None,  # NOTE: Default: Use 'em all!
         )
         self.shape = (n_sid, n_iid, 2)
         self.dtype = dtype
@@ -75,7 +75,7 @@ class BedReader(object):
         # bed-reader uses sample x variant orientation.
         # Missing values are represented as -127 with int8 dtype,
         # see: https://fastlmm.github.io/bed-reader
-        arr = self.bed.read(index=(idx[1],idx[0]),dtype=np.int8,order='F').T
+        arr = self.bed.read(index=(idx[1], idx[0]), dtype=np.int8, order="F").T
         # NOTE: bed-reader can return float32 and float64, too, so this copy could be avoided
         #       (missing would then be NaN)
         arr = arr.astype(self.dtype)
