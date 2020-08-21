@@ -74,7 +74,7 @@ class BedReader(object):
         # Slice using reversal of first two slices since
         # bed-reader uses sample x variant orientation.
         # Missing values are represented as -127 with int8 dtype,
-        # see: https://fastlmm.github.io/PySnpTools/#snpreader-bed
+        # see: https://fastlmm.github.io/bed-reader
         arr = self.bed.read(index=(idx[1],idx[0]),dtype=np.int8,order='F').T
         # NOTE: bed-reader can return float32 and float64, too, so this copy could be avoided
         #       (missing would then be NaN)
@@ -263,10 +263,10 @@ def read_plink(
         BedReader(bed_path, (len(df_bim), len(df_fam)), count_A1=count_a1),  # type: ignore[arg-type]
         chunks=chunks,
         # Lock must be true with multiprocessing dask scheduler
-        # to not get pysnptools errors (it works w/ threading backend though)
+        # to not get bed-reader errors (it works w/ threading backend though)
         lock=lock,
         asarray=False,
-        name=f"pysnptools:read_plink:{bed_path}",
+        name=f"bed_reader:read_plink:{bed_path}",
     )
 
     # If contigs are already integers, use them as-is

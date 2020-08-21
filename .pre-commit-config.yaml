@@ -30,4 +30,4 @@ repos:
     hooks:
       - id: mypy
         args: ["--strict", "--show-error-codes"]
-        additional_dependencies: ["numpy", "xarray", "pysnptools>=0.4.20", "dask[dataframe,array]", "git+https://github.com/pystatgen/sgkit"]
+        additional_dependencies: ["numpy", "xarray", "bed-reader", "dask[dataframe,array]", "git+https://github.com/pystatgen/sgkit"]
