@@ -3,6 +3,11 @@ import pytest
 import xarray as xr
 from sgkit_plink.pysnptools import read_plink
 
+# This data was generated externally using Hail
+# for 10 samples, 100 variants, and genotype calls
+# that are missing in ~10% of cases.
+# TODO: document and move code to central location
+# (cf. https://github.com/pystatgen/sgkit-plink/pull/20#discussion_r466907811)
 example_dataset_1 = "plink_sim_10s_100v_10pmiss"
 
 
@@ -30,6 +35,17 @@ def test_raise_on_both_path_types():
         match="Either `path` or all 3 of `{bed,bim,fam}_path` must be specified but not both",
     ):
         read_plink(path="x", bed_path="x")
+
+
+def test_fixlen_str_variable(ds1):
+    assert ds1["sample_id"].dtype == np.dtype("<U3")
+    assert ds1["variant_id"].dtype == np.dtype("<U13")
+    assert ds1["variant_allele"].dtype == np.dtype("|S6")
+    assert ds1["sample_family_id"].dtype == np.dtype("<U1")
+    # TODO: Remove 'None' strings https://github.com/pystatgen/sgkit-plink/issues/16
+    # which should make these <U1
+    assert ds1["sample_maternal_id"].dtype == np.dtype("<U4")
+    assert ds1["sample_paternal_id"].dtype == np.dtype("<U4")
 
 
 def test_read_slicing(ds1):

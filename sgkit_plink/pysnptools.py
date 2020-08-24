@@ -1,10 +1,11 @@
 """PLINK 1.9 reader implementation"""
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Mapping, Optional, Tuple, Union
 
 import dask.array as da
 import dask.dataframe as dd
 import numpy as np
+from dask.array import Array
 from dask.dataframe import DataFrame
 from pysnptools.snpreader import Bed
 from xarray import Dataset
@@ -98,11 +99,26 @@ class BedReader(object):
         self.bed._close_bed()  # pragma: no cover
 
 
-def _to_dict(df: dd.DataFrame, dtype: Any = None) -> Dict[str, da.Array]:
-    return {
-        c: df[c].to_dask_array(lengths=True).astype(dtype[c] if dtype else df[c].dtype)
-        for c in df
-    }
+def _max_str_len(arr: Array) -> Array:
+    return arr.map_blocks(lambda s: np.char.str_len(s.astype(str)), dtype=np.int8).max()
+
+
+def _to_dict(
+    df: DataFrame, dtype: Optional[Mapping[str, Any]] = None
+) -> Mapping[str, Any]:
+    arrs = {}
+    for c in df:
+        a = df[c].to_dask_array(lengths=True)
+        dt = df[c].dtype
+        if dtype:
+            dt = dtype[c]
+        kind = np.dtype(dt).kind
+        if kind in ["U", "S"]:
+            # Compute fixed-length string dtype for array
+            max_len = _max_str_len(a).compute()
+            dt = f"{kind}{max_len}"
+        arrs[c] = a.astype(dt)
+    return arrs
 
 
 def read_fam(path: PathType, sep: str = " ") -> DataFrame:
