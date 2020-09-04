@@ -1,5 +1,5 @@
 numpy
 xarray
 dask[dataframe,array]
-pysnptools>=0.4.20
+bed-reader
 git+https://github.com/pystatgen/sgkit

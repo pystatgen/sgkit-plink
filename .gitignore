@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+/.vs
+/.vscode
+/docs/ipynb/Untitled.ipynb
+/releases/5.d74c60c9fdd2ed6675a2eb2e87d7a4b85f826f36
+/TestResults
+/deltest.py
+/delspeed.py
