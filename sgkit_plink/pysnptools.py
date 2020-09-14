@@ -11,7 +11,7 @@ from dask.dataframe import DataFrame
 from xarray import Dataset
 
 from sgkit import create_genotype_call_dataset
-from sgkit.api import DIM_SAMPLE
+from sgkit.model import DIM_SAMPLE
 from sgkit.utils import encode_array
 
 PathType = Union[str, Path]
