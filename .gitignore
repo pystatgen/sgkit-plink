@@ -134,3 +134,4 @@ dmypy.json
 /TestResults
 /deltest.py
 /delspeed.py
+.idea/
